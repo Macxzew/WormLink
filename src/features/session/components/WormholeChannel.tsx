@@ -231,12 +231,7 @@ export const WormholeChannel = ({
                     >
                         <GlassPanel className="mx-auto w-full max-w-[860px] overflow-hidden p-0">
                             <div className="border-b border-white/10 bg-black/20 px-6 py-6">
-                                <p className="text-[11px] uppercase tracking-[0.34em] text-violet-300/70">
-                                    WormLink
-                                </p>
-                                <h1 className="mt-3 font-display text-3xl text-white md:text-4xl">
-                                    Encrypted peer-to-peer exchange
-                                </h1>
+                                <h1 className="font-display text-3xl text-white md:text-4xl">WormLink</h1>
                                 <p className="mt-3 max-w-xl text-sm leading-7 text-slate-400">{statusLine}</p>
 
                                 <button
