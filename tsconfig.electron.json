@@ -1,0 +1,10 @@
+{
+    "extends": "./tsconfig.node.json",
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022"],
+        "outDir": "dist-electron",
+        "noEmit": true
+    },
+    "include": ["electron", "electron.vite.config.ts"]
+}
