@@ -1,4 +1,5 @@
 import type { PeerTransport } from "@/core/protocol/contracts";
+import { MAX_DATA_CHANNEL_MESSAGE_CHARS } from "@/core/security/policy";
 import { assertSerializedTransportPayload, parseJson } from "@/core/protocol/runtimeGuards";
 import type { AppPayload, TransportStats } from "@/core/types/transport";
 import { createEmitter } from "@/lib/events";
@@ -19,6 +20,7 @@ export class WebRtcPeerTransport implements PeerTransport {
     private readonly descriptionEmitter = createEmitter<RTCSessionDescriptionInit>();
     private readonly candidateEmitter = createEmitter<RTCIceCandidateInit>();
     private readonly statsEmitter = createEmitter<TransportStats>();
+    private lastRouteType: TransportStats["routeType"] = "unknown";
 
     constructor(isInitiator: boolean, iceServers: RTCIceServer[] = DEFAULT_ICE_SERVERS) {
         this.isInitiator = isInitiator;
@@ -40,7 +42,7 @@ export class WebRtcPeerTransport implements PeerTransport {
         };
 
         this.peer.onconnectionstatechange = () => {
-            this.emitStats();
+            void this.emitStats();
             if (this.peer.connectionState === "failed") {
                 this.errorEmitter.emit(new Error("Peer connection failed."));
             }
@@ -49,8 +51,10 @@ export class WebRtcPeerTransport implements PeerTransport {
             }
         };
 
-        this.peer.oniceconnectionstatechange = () => this.emitStats();
-        this.statsInterval = window.setInterval(() => this.emitStats(), 400);
+        this.peer.oniceconnectionstatechange = () => void this.emitStats();
+        this.statsInterval = window.setInterval(() => {
+            void this.emitStats();
+        }, 400);
     }
 
     async createOffer(): Promise<RTCSessionDescriptionInit> {
@@ -143,26 +147,110 @@ export class WebRtcPeerTransport implements PeerTransport {
         channel.onclose = () => this.closeEmitter.emit(undefined);
         channel.onerror = () => this.errorEmitter.emit(new Error("Data channel error."));
         channel.onmessage = (event) => {
-            const payload = parseJson(typeof event.data === "string" ? event.data : textDecoder.decode(event.data));
-            assertSerializedTransportPayload(payload);
-            if (payload.kind === "file-chunk" && typeof payload.data === "string") {
-                // Reconvertit le bloc en binaire.
-                this.payloadEmitter.emit({
-                    ...payload,
-                    data: base64ToBuffer(payload.data),
-                } satisfies AppPayload);
-                return;
+            try {
+                const raw = typeof event.data === "string" ? event.data : textDecoder.decode(event.data);
+                if (raw.length > MAX_DATA_CHANNEL_MESSAGE_CHARS) {
+                    throw new Error("Incoming transport payload exceeded the accepted size.");
+                }
+
+                const payload: unknown = parseJson(raw);
+                assertSerializedTransportPayload(payload);
+                const parsedPayload = payload as AppPayload | {
+                    kind: "file-chunk";
+                    transferId: string;
+                    chunkIndex: number;
+                    totalChunks: number;
+                    data: string;
+                    checksum: string;
+                };
+                if (parsedPayload.kind === "file-chunk" && typeof parsedPayload.data === "string") {
+                    // Reconvertit le bloc en binaire.
+                    this.payloadEmitter.emit({
+                        ...parsedPayload,
+                        data: base64ToBuffer(parsedPayload.data),
+                    } satisfies AppPayload);
+                    return;
+                }
+                this.payloadEmitter.emit(parsedPayload as AppPayload);
+            } catch (error) {
+                this.errorEmitter.emit(
+                    error instanceof Error ? error : new Error("Failed to decode incoming transport payload."),
+                );
             }
-            this.payloadEmitter.emit(payload as AppPayload);
         };
     }
 
-    private emitStats(): void {
+    private async detectRouteType(): Promise<TransportStats["routeType"]> {
+        try {
+            const stats = await this.peer.getStats();
+            let selectedPair: RTCStats | undefined;
+            let localCandidate: RTCStats | undefined;
+            let remoteCandidate: RTCStats | undefined;
+
+            stats.forEach((report) => {
+                if (
+                    report.type === "transport"
+                    && "selectedCandidatePairId" in report
+                    && report.selectedCandidatePairId
+                ) {
+                    selectedPair = stats.get(report.selectedCandidatePairId);
+                }
+            });
+
+            if (!selectedPair) {
+                stats.forEach((report) => {
+                    if (
+                        report.type === "candidate-pair"
+                        && "state" in report
+                        && report.state === "succeeded"
+                        && "nominated" in report
+                        && report.nominated
+                    ) {
+                        selectedPair = report;
+                    }
+                });
+            }
+
+            if (
+                selectedPair
+                && "localCandidateId" in selectedPair
+                && "remoteCandidateId" in selectedPair
+            ) {
+                localCandidate = stats.get(selectedPair.localCandidateId as string);
+                remoteCandidate = stats.get(selectedPair.remoteCandidateId as string);
+            }
+
+            const localType =
+                localCandidate && "candidateType" in localCandidate
+                    ? (localCandidate.candidateType as string | undefined)
+                    : undefined;
+            const remoteType =
+                remoteCandidate && "candidateType" in remoteCandidate
+                    ? (remoteCandidate.candidateType as string | undefined)
+                    : undefined;
+
+            if (localType === "relay" || remoteType === "relay") {
+                return "relay";
+            }
+
+            if (localType || remoteType) {
+                return "direct";
+            }
+        } catch {
+            return this.lastRouteType;
+        }
+
+        return "unknown";
+    }
+
+    private async emitStats(): Promise<void> {
         // Sert au debug et à l'état réseau.
+        this.lastRouteType = await this.detectRouteType();
         this.statsEmitter.emit({
             bufferedAmount: this.channel?.bufferedAmount ?? 0,
             connectionState: this.peer.connectionState,
             iceState: this.peer.iceConnectionState,
+            routeType: this.lastRouteType,
         });
     }
 }

@@ -20,6 +20,11 @@ export type AppPayload =
                 mimeType: string;
                 size: number;
                 lastModified: number;
+                integrity: {
+                    algorithm: "SHA-256";
+                    chunkSize: number;
+                    totalChunks: number;
+                };
             };
         }
     | {
@@ -28,6 +33,7 @@ export type AppPayload =
             chunkIndex: number;
             totalChunks: number;
             data: ArrayBuffer;
+            checksum: string;
         }
     | {
             kind: "file-complete";
@@ -37,10 +43,21 @@ export type AppPayload =
             kind: "peer-status";
             state: "joined" | "closing";
             timestamp: number;
+        }
+    | {
+            kind: "session-policy";
+            strictMode: boolean;
+            timestamp: number;
+        }
+    | {
+            kind: "fingerprint-verification";
+            verified: boolean;
+            timestamp: number;
         };
 
 export interface TransportStats {
     bufferedAmount: number;
     connectionState: RTCPeerConnectionState;
     iceState: RTCIceConnectionState;
+    routeType: "direct" | "relay" | "unknown";
 }

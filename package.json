@@ -9,6 +9,7 @@
     "scripts": {
         "start": "electron-vite dev",
         "dev": "electron-vite dev",
+        "build-pake": "GOOS=js GOARCH=wasm go build -C go-pake -o ../public/wormlink-pake.wasm .",
         "build": "electron-vite build",
         "lint": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.electron.json",
         "verify": "npm run lint",

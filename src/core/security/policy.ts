@@ -1,0 +1,8 @@
+export const MAX_TEXT_LENGTH = 4_000;
+export const MAX_FILE_NAME_LENGTH = 255;
+export const MAX_INCOMING_TRANSFERS = 8;
+export const MAX_SESSION_TRANSFER_BYTES = 768 * 1024 * 1024;
+export const MAX_DATA_CHANNEL_MESSAGE_CHARS = 256 * 1024;
+
+export const TRANSFER_INTEGRITY_ALGORITHM = "SHA-256" as const;
+

@@ -8,7 +8,7 @@ interface GlassPanelProps extends PropsWithChildren {
 export const GlassPanel = ({ className, children }: GlassPanelProps) => (
     <div
         className={clsx(
-            "rounded-[28px] border border-white/10 bg-white/[0.06] shadow-portal backdrop-blur-2xl",
+            "rounded-[28px] bg-white/[0.04] shadow-portal backdrop-blur-2xl",
             className,
         )}
     >

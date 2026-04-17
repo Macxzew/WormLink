@@ -1,5 +1,6 @@
 import type { SignalEnvelope } from "@/core/types/signalling";
 import type { EncryptedPayload } from "@/core/types/crypto";
+import { MAX_FILE_NAME_LENGTH, MAX_TEXT_LENGTH } from "@/core/security/policy";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -24,13 +25,13 @@ const isEncryptedPayload = (value: unknown): value is EncryptedPayload => {
 
 export const parseJson = (value: string): unknown => JSON.parse(value);
 
-export const assertSignalEnvelope = (value: unknown): asserts value is SignalEnvelope => {
+export function assertSignalEnvelope(value: unknown): asserts value is SignalEnvelope {
     if (!isRecord(value) || !isString(value.type) || !isNumber(value.sentAt)) {
         throw new Error("Invalid signalling envelope.");
     }
-};
+}
 
-export const assertSerializedTransportPayload = (value: unknown): void => {
+export function assertSerializedTransportPayload(value: unknown): void {
     if (!isRecord(value) || !isString(value.kind)) {
         throw new Error("Invalid transport payload.");
     }
@@ -43,7 +44,12 @@ export const assertSerializedTransportPayload = (value: unknown): void => {
             return;
 
         case "chat":
-            if (!isString(value.id) || !isString(value.text) || !isNumber(value.timestamp)) {
+            if (
+                !isString(value.id)
+                || !isString(value.text)
+                || value.text.length > MAX_TEXT_LENGTH
+                || !isNumber(value.timestamp)
+            ) {
                 throw new Error("Invalid chat payload.");
             }
             return;
@@ -55,9 +61,14 @@ export const assertSerializedTransportPayload = (value: unknown): void => {
             if (
                 !isString(value.descriptor.id)
                 || !isString(value.descriptor.name)
+                || value.descriptor.name.length > MAX_FILE_NAME_LENGTH
                 || !isString(value.descriptor.mimeType)
                 || !isNumber(value.descriptor.size)
                 || !isNumber(value.descriptor.lastModified)
+                || !isRecord(value.descriptor.integrity)
+                || value.descriptor.integrity.algorithm !== "SHA-256"
+                || !isNumber(value.descriptor.integrity.chunkSize)
+                || !isNumber(value.descriptor.integrity.totalChunks)
             ) {
                 throw new Error("Invalid file descriptor.");
             }
@@ -69,6 +80,7 @@ export const assertSerializedTransportPayload = (value: unknown): void => {
                 || !isNumber(value.chunkIndex)
                 || !isNumber(value.totalChunks)
                 || !isString(value.data)
+                || !isString(value.checksum)
             ) {
                 throw new Error("Invalid file chunk.");
             }
@@ -89,12 +101,24 @@ export const assertSerializedTransportPayload = (value: unknown): void => {
             }
             return;
 
+        case "session-policy":
+            if (typeof value.strictMode !== "boolean" || !isNumber(value.timestamp)) {
+                throw new Error("Invalid session policy payload.");
+            }
+            return;
+
+        case "fingerprint-verification":
+            if (typeof value.verified !== "boolean" || !isNumber(value.timestamp)) {
+                throw new Error("Invalid fingerprint verification payload.");
+            }
+            return;
+
         default:
             throw new Error("Unknown transport payload.");
     }
-};
+}
 
-export const assertInitMessage = (value: unknown): asserts value is { slot?: string; iceServers?: RTCIceServer[] } => {
+export function assertInitMessage(value: unknown): asserts value is { slot?: string; iceServers?: RTCIceServer[] } {
     if (!isRecord(value)) {
         throw new Error("Invalid rendezvous init payload.");
     }
@@ -106,4 +130,4 @@ export const assertInitMessage = (value: unknown): asserts value is { slot?: str
     if (value.iceServers !== undefined && !Array.isArray(value.iceServers)) {
         throw new Error("Invalid ICE server list.");
     }
-};
+}

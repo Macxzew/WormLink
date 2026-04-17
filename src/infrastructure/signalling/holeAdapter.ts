@@ -1,14 +1,17 @@
 import type { SignalEnvelope, SignalMessage } from "@/core/types/signalling";
 import type { RendezvousAdapter } from "@/core/protocol/contracts";
 import { assertInitMessage, assertSignalEnvelope, parseJson } from "@/core/protocol/runtimeGuards";
-import type { SessionCrypto } from "@/core/types/crypto";
+import type { EncryptedPayload, SessionCrypto } from "@/core/types/crypto";
 import { buildSessionCode, parseSessionCode } from "@/core/session/sessionCode";
 import { createSessionPassword } from "@/core/session/sessionCode";
+import { encodePakePassword, loadPakeRuntime, toFingerprint } from "@/infrastructure/crypto/pakeRuntime";
 import { createEmitter } from "@/lib/events";
 import { textDecoder, textEncoder, bufferToBase64, base64ToBuffer } from "@/lib/bytes";
 
 const DEFAULT_PROTOCOL = "4";
 export const DEFAULT_SIGNAL_URL = "https://hole.0x0.st/";
+
+const LOCAL_SIGNAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
 interface ProbeOptions {
     endpoint: string;
@@ -18,8 +21,19 @@ interface ProbeOptions {
 
 const normaliseEndpoint = (endpoint: string): string => {
     const base = new URL(endpoint.trim());
+    if (!isTrustedSignalOrigin(base)) {
+        throw new Error("Only HTTPS backends are allowed, except for localhost development servers.");
+    }
     const path = base.pathname.endsWith("/") ? base.pathname : `${base.pathname}/`;
     return `${base.protocol}//${base.host}${path}`;
+};
+
+export const isTrustedSignalOrigin = (url: URL): boolean =>
+    url.protocol === "https:" || (url.protocol === "http:" && LOCAL_SIGNAL_HOSTS.has(url.hostname));
+
+export const describeSignalEndpointTrust = (endpoint: string): "secure" | "local" => {
+    const url = new URL(endpoint);
+    return url.protocol === "https:" ? "secure" : "local";
 };
 
 const buildWebsocketUrl = (endpoint: string, slot?: string): string => {
@@ -87,8 +101,9 @@ export const validateWormholeEndpoint = async ({
             }
 
             try {
-                const init = parseJson(String(event.data));
+                const init: unknown = parseJson(String(event.data));
                 assertInitMessage(init);
+                const parsedInit = init as { slot?: string; iceServers?: RTCIceServer[] };
                 finish(() => {
                     window.clearTimeout(timeout);
                     socket.close(1000, "validated");
@@ -108,10 +123,13 @@ export const validateWormholeEndpoint = async ({
 export class HoleSignallingAdapter implements RendezvousAdapter {
     private socket?: WebSocket;
     private readonly envelopeEmitter = createEmitter<SignalEnvelope>();
+    private readonly fingerprintEmitter = createEmitter<{ value: string; short: string }>();
+    private readonly sharedSecretEmitter = createEmitter<Uint8Array>();
     private readonly debugEmitter = createEmitter<{ message: string; raw?: SignalMessage }>();
     private sharedKey?: CryptoKey;
     private slot?: string;
     private connected = false;
+    private password?: string;
 
     constructor(
         private readonly cryptoService: SessionCrypto,
@@ -127,7 +145,10 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
         const password = createSessionPassword();
         const { slot, iceServers } = await this.openSocket();
         this.slot = slot;
-        this.sharedKey = await this.cryptoService.deriveSessionKey(password, `rendezvous:${slot}`);
+        this.password = password;
+        if (this.socket) {
+            this.attachBootstrapListener(this.socket);
+        }
         const code = buildSessionCode(slot, password);
 
         return {
@@ -142,7 +163,8 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
         const code = parseSessionCode(codeValue);
         const { iceServers } = await this.openSocket(code.nameplate);
         this.slot = code.nameplate;
-        this.sharedKey = await this.cryptoService.deriveSessionKey(code.password, `rendezvous:${code.nameplate}`);
+        this.password = code.password;
+        await this.performJoinPake(code.password);
 
         return {
             password: code.password,
@@ -170,6 +192,14 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
         return this.envelopeEmitter.subscribe(listener);
     }
 
+    onFingerprint(listener: (fingerprint: { value: string; short: string }) => void): () => void {
+        return this.fingerprintEmitter.subscribe(listener);
+    }
+
+    onSharedSecret(listener: (sharedSecret: Uint8Array) => void): () => void {
+        return this.sharedSecretEmitter.subscribe(listener);
+    }
+
     onDebug(listener: (message: string, raw?: SignalMessage) => void): () => void {
         return this.debugEmitter.subscribe(({ message, raw }) => listener(message, raw));
     }
@@ -187,6 +217,7 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
         this.sharedKey = undefined;
         this.slot = undefined;
         this.connected = false;
+        this.password = undefined;
     }
 
     private async openSocket(slot?: string): Promise<{ slot: string; iceServers: RTCIceServer[] }> {
@@ -244,9 +275,10 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
             socket.onmessage = async (event) => {
                 if (!settled) {
                     try {
-                        const init = parseJson(String(event.data));
+                        const init: unknown = parseJson(String(event.data));
                         assertInitMessage(init);
-                        const assignedSlot = slot ?? init.slot;
+                        const parsedInit = init as { slot?: string; iceServers?: RTCIceServer[] };
+                        const assignedSlot = slot ?? parsedInit.slot;
                         if (!assignedSlot) {
                             fail(new Error("Rendezvous server did not provide a slot."));
                             return;
@@ -254,11 +286,9 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
 
                         settled = true;
                         this.slot = assignedSlot;
-                        // Après l'init, on passe en mode enveloppes chiffrées.
-                        this.attachEnvelopeListener(socket);
                         resolve({
                             slot: assignedSlot,
-                            iceServers: init.iceServers ?? [],
+                            iceServers: parsedInit.iceServers ?? [],
                         });
                     } catch (error) {
                         fail(error instanceof Error ? error : new Error("Invalid rendezvous init payload."));
@@ -270,31 +300,131 @@ export class HoleSignallingAdapter implements RendezvousAdapter {
         });
     }
 
-    private attachEnvelopeListener(socket: WebSocket): void {
+    private attachBootstrapListener(socket: WebSocket): void {
         socket.onmessage = async (event) => {
-            try {
-                const body = String(event.data);
+            const body = String(event.data);
+            if (!this.password || !this.slot) {
                 this.debugEmitter.emit({
-                    message: "WS <- encrypted envelope",
-                    raw: { phase: "encrypted", body: `[encrypted:${body.length}]` },
+                    message: "Discarded bootstrap signalling message before password/slot were ready.",
                 });
+                return;
+            }
 
-                if (!this.sharedKey) {
-                    return;
-                }
+            if (this.sharedKey) {
+                await this.handleEncryptedEnvelope(body);
+                return;
+            }
 
-                // Le srv relaie du base64 texte.
-                const serialized = textDecoder.decode(base64ToBuffer(body));
-                const encrypted = parseJson(serialized);
-                const envelope = await this.cryptoService.decryptPayload<SignalEnvelope>(this.sharedKey, encrypted);
-                assertSignalEnvelope(envelope);
-                this.envelopeEmitter.emit(envelope);
+            try {
+                const runtime = await loadPakeRuntime();
+                const pass = encodePakePassword(this.password);
+                const [sharedSecret, response] = runtime.exchange(pass, body);
+                await this.applyPakeSharedSecret(sharedSecret);
+                socket.send(response);
+                this.debugEmitter.emit({
+                    message: "PAKE responder handshake completed.",
+                });
             } catch (error) {
                 this.debugEmitter.emit({
-                    message: error instanceof Error ? error.message : "Failed to decode encrypted signalling payload.",
+                    message: error instanceof Error ? error.message : "PAKE responder handshake failed.",
                 });
             }
         };
+    }
+
+    private async performJoinPake(password: string): Promise<void> {
+        if (!this.socket) {
+            throw new Error("Rendezvous socket is not ready.");
+        }
+
+        const runtime = await loadPakeRuntime();
+        const pass = encodePakePassword(password);
+        const msgA = runtime.start(pass);
+        this.socket.send(msgA);
+        this.debugEmitter.emit({
+            message: `WS -> pake-a`,
+        });
+
+        const msgB = await new Promise<string>((resolve, reject) => {
+            if (!this.socket) {
+                reject(new Error("Rendezvous socket disappeared during PAKE."));
+                return;
+            }
+
+            const socket = this.socket;
+            const cleanup = (): void => {
+                socket.removeEventListener("message", handleMessage);
+                socket.removeEventListener("error", handleError);
+                socket.removeEventListener("close", handleClose);
+            };
+            const handleMessage = (event: MessageEvent): void => {
+                cleanup();
+                resolve(String(event.data));
+            };
+            const handleError = (): void => {
+                cleanup();
+                reject(new Error("Rendezvous socket failed during PAKE."));
+            };
+            const handleClose = (closeEvent: CloseEvent): void => {
+                cleanup();
+                reject(new Error(`Rendezvous socket closed during PAKE (${closeEvent.code}).`));
+            };
+
+            socket.addEventListener("message", handleMessage);
+            socket.addEventListener("error", handleError);
+            socket.addEventListener("close", handleClose);
+        });
+
+        const sharedSecret = runtime.finish(msgB);
+        await this.applyPakeSharedSecret(sharedSecret);
+        this.attachEnvelopeListener(this.socket);
+        this.debugEmitter.emit({
+            message: "PAKE initiator handshake completed.",
+        });
+    }
+
+    private async applyPakeSharedSecret(sharedSecret: Uint8Array): Promise<void> {
+        const rootSecret = new Uint8Array(sharedSecret);
+        const signallingKeyMaterial = await this.cryptoService.deriveSubkey(rootSecret.buffer, "signal");
+        const fingerprintMaterial = await this.cryptoService.deriveSubkey(rootSecret.buffer, "fingerprint", 8);
+        this.sharedKey = await this.cryptoService.importSessionKey(
+            new Uint8Array(signallingKeyMaterial).slice().buffer,
+        );
+        this.sharedSecretEmitter.emit(rootSecret);
+        this.fingerprintEmitter.emit(toFingerprint(fingerprintMaterial));
+    }
+
+    private attachEnvelopeListener(socket: WebSocket): void {
+        socket.onmessage = async (event) => {
+            await this.handleEncryptedEnvelope(String(event.data));
+        };
+    }
+
+    private async handleEncryptedEnvelope(body: string): Promise<void> {
+        try {
+            this.debugEmitter.emit({
+                message: "WS <- encrypted envelope",
+                raw: { phase: "encrypted", body: `[encrypted:${body.length}]` },
+            });
+
+            if (!this.sharedKey) {
+                return;
+            }
+
+            // Le srv relaie du base64 texte.
+            const serialized = textDecoder.decode(base64ToBuffer(body));
+            const encrypted: unknown = parseJson(serialized);
+            const envelope = await this.cryptoService.decryptPayload<SignalEnvelope>(
+                this.sharedKey,
+                encrypted as EncryptedPayload,
+            );
+            assertSignalEnvelope(envelope);
+            this.envelopeEmitter.emit(envelope);
+        } catch (error) {
+            this.debugEmitter.emit({
+                message: error instanceof Error ? error.message : "Failed to decode encrypted signalling payload.",
+            });
+        }
     }
 
     private websocketUrl(slot?: string): string {

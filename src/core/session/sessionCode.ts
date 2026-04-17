@@ -1,7 +1,11 @@
 import type { SessionCode } from "@/core/types/session";
 import { WORDS } from "@/lib/words";
 
-const pickWord = (): string => WORDS[Math.floor(Math.random() * WORDS.length)];
+const pickWord = (): string => {
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    return WORDS[random[0] % WORDS.length];
+};
 
 export const createSessionPassword = (): string => [pickWord(), pickWord(), pickWord()].join("-");
 

@@ -12,7 +12,9 @@ const createWindow = async (): Promise<void> => {
         trafficLightPosition: { x: 18, y: 18 },
         webPreferences: {
             contextIsolation: true,
-            sandbox: false,
+            sandbox: true,
+            webSecurity: true,
+            allowRunningInsecureContent: false,
         },
     });
 

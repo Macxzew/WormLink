@@ -4,47 +4,52 @@
 
 <center><img alt="WormLink" src="assets/desktop.png"/></center>
 
-## 🙏 Credits
-
-WormLink is an original project inspired by [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole).
-
-The current backend used for signalling is [hole.0x0.st](https://hole.0x0.st/), a public WebWormhole instance by [mia / 0x0.st](https://0x0.st/).
-
-By default, WormLink starts on `hole.0x0.st`, but the signalling backend can also be changed at runtime from the interface. Any custom endpoint is validated first to confirm that it behaves like a compatible WebWormhole server before it is applied.
-
-WebWormhole source: [saljam/webwormhole](https://github.com/saljam/webwormhole)
+---
 
 ## ✨ Features
 
-- Encrypted peer-to-peer messaging
-- Encrypted file transfer up to 512 MB
-- Session code sharing
-- QR code support
-- Drag and drop file sending
-- Runtime backend source selector with endpoint validation
-- Debug journal
-- Reduced motion support
+- Encrypted peer-to-peer messaging  
+- Encrypted file transfer (up to 512 MB)  
+- Session code + QR sharing  
+- Drag & drop file sending  
+- Runtime backend selector (with validation)  
+- Debug journal  
+- Reduced motion support  
+
+---
 
 ## 🔐 Security Notes
 
-- Messages and file payloads are encrypted locally before transport
-- `hole.0x0.st` is the default signalling backend at startup
-- Supported signalling sources can be switched from the UI and are validated before use
-- Session fingerprints are shown for manual verification
-- No security audit has been performed at this time
+- Encryption is done locally before any transport  
+- PAKE handshake (WebAssembly) for session setup  
+- Signalling is encrypted after handshake  
+- Session fingerprint is shown for manual verification  
 
-## 🧩 Environment Variables
+### Strict mode (optional)
 
-You can configure the signalling backend with:
+- Blocks messages and files until both peers verify the fingerprint  
+- Blocks relay routes until a direct connection is available  
+- Verification state is shared between both peers  
 
-```shell
-VITE_WORMLINK_RENDEZVOUS_URL=
-VITE_WORMLINK_PROTOCOL=
-```
+---
 
-If no environment variable is provided, the application starts with `https://hole.0x0.st/`.
+## 📦 File Transfer
 
-The interface also exposes a backend selector. At the moment, `hole.0x0.st` and `https://webwormhole.com/` are suggested from the UI, and custom endpoints can be entered manually. Runtime changes are temporary for the current launch and reset to the default backend on the next app start.
+- Chunked transfer (64 KiB)  
+- SHA-256 integrity check per chunk  
+- Manual save for received files (no auto-download)  
+- Local preview for images and videos  
+
+---
+
+## 🌐 Backend
+
+- Default: https://hole.0x0.st/  
+- Custom endpoints supported  
+- Endpoints are validated before use  
+- HTTPS required (except localhost)  
+
+---
 
 
 ## 🚀 Usage
@@ -107,10 +112,13 @@ npm run build-linux
 
 2. You can then launch the generated application from the output folder.
 
+---
 
 ## 👤 Author
 
 Give a ⭐️ if this project helped you!
+
+---
 
 ## 📝 License
 

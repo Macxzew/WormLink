@@ -7,6 +7,11 @@ export interface FileDescriptor {
     mimeType: string;
     size: number;
     lastModified: number;
+    integrity: {
+        algorithm: "SHA-256";
+        chunkSize: number;
+        totalChunks: number;
+    };
 }
 
 export interface FileTransferRecord {
@@ -20,4 +25,5 @@ export interface FileTransferRecord {
     previewUrl?: string;
     autoDownloaded?: boolean;
     error?: string;
+    integrityState?: "pending" | "verified" | "failed";
 }

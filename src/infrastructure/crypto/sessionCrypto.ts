@@ -13,6 +13,21 @@ const createIv = (): Uint8Array => {
     return iv;
 };
 
+const readDerivedBits = async (secret: BufferSource, context: string, length: number): Promise<Uint8Array> => {
+    const imported = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveBits"]);
+    const bits = await crypto.subtle.deriveBits(
+        {
+            name: "HKDF",
+            hash: "SHA-256",
+            salt: textEncoder.encode("wormlink:pake-root"),
+            info: textEncoder.encode(`wormlink:${context}`),
+        },
+        imported,
+        length * 8,
+    );
+    return new Uint8Array(bits);
+};
+
 export class AesGcmSessionCrypto implements SessionCrypto {
   async deriveSessionKey(secret: string, context: string): Promise<CryptoKey> {
     // Le contexte sépare les clés rendezvous et app.
@@ -65,5 +80,13 @@ export class AesGcmSessionCrypto implements SessionCrypto {
         );
 
         return JSON.parse(textDecoder.decode(plaintext)) as T;
+    }
+
+  async importSessionKey(raw: BufferSource): Promise<CryptoKey> {
+        return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+    }
+
+  async deriveSubkey(secret: BufferSource, context: string, length = 32): Promise<Uint8Array> {
+        return readDerivedBits(secret, context, length);
     }
 }

@@ -1,4 +1,5 @@
 import type { FileDescriptor } from "@/core/types/transfer";
+import { MAX_FILE_NAME_LENGTH, TRANSFER_INTEGRITY_ALGORITHM } from "@/core/security/policy";
 import { CHUNK_SIZE } from "@/lib/bytes";
 import { createId } from "@/lib/id";
 
@@ -19,6 +20,9 @@ export const isPreviewableMime = (mimeType: string): boolean =>
 export const createOutgoingTransfer = (file: File): OutgoingTransfer => {
     if (file.size > MAX_FILE_BYTES) {
         throw new Error("File exceeds the 512 MB transfer limit.");
+    }
+    if (!file.name || file.name.length > MAX_FILE_NAME_LENGTH) {
+        throw new Error("File name is missing or exceeds the accepted length.");
     }
 
     // Coupe le fichier en blocs fixes.
@@ -41,6 +45,11 @@ export const createOutgoingTransfer = (file: File): OutgoingTransfer => {
             mimeType: file.type || "application/octet-stream",
             size: file.size,
             lastModified: file.lastModified,
+            integrity: {
+                algorithm: TRANSFER_INTEGRITY_ALGORITHM,
+                chunkSize: CHUNK_SIZE,
+                totalChunks: chunks.length,
+            },
         },
         chunks,
         previewUrl: isPreviewableMime(file.type) ? URL.createObjectURL(file) : undefined,

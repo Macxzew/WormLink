@@ -7,6 +7,8 @@ export interface RendezvousAdapter {
     joinWithCode(code: string): Promise<{ password: string; nameplate: string; iceServers: RTCIceServer[] }>;
     sendEnvelope(envelope: SignalEnvelope): Promise<void>;
     onEnvelope(listener: (envelope: SignalEnvelope) => void): () => void;
+    onFingerprint(listener: (fingerprint: { value: string; short: string }) => void): () => void;
+    onSharedSecret(listener: (sharedSecret: Uint8Array) => void): () => void;
     onDebug(listener: (message: string, raw?: SignalMessage) => void): () => void;
     close(): Promise<void>;
 }

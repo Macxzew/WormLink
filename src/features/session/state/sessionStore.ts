@@ -14,6 +14,8 @@ interface SessionStoreState {
     fingerprint?: SessionFingerprint;
     localPassword?: string;
     peerConnected: boolean;
+    fingerprintVerified: boolean;
+    remoteFingerprintVerified: boolean;
     statusLine: string;
     error?: string;
     notice?: string;
@@ -22,6 +24,7 @@ interface SessionStoreState {
     logs: SessionEventLog[];
     transportStats?: TransportStats;
     oneShotMode: boolean;
+    strictMode: boolean;
     reducedMotion: boolean;
     debugOpen: boolean;
     isDragActive: boolean;
@@ -32,6 +35,8 @@ interface SessionStoreState {
     setIdentity: (identity: Partial<SessionIdentity>) => void;
     setSessionCode: (code?: SessionCode, localPassword?: string) => void;
     setFingerprint: (fingerprint?: SessionFingerprint) => void;
+    setFingerprintVerified: (value: boolean) => void;
+    setRemoteFingerprintVerified: (value: boolean) => void;
     setPeerConnected: (value: boolean) => void;
     setError: (error?: string) => void;
     setNotice: (notice?: string) => void;
@@ -43,6 +48,7 @@ interface SessionStoreState {
     clearLocalSession: () => void;
     setTransportStats: (stats?: TransportStats) => void;
     setOneShotMode: (value: boolean) => void;
+    setStrictMode: (value: boolean) => void;
     setReducedMotion: (value: boolean) => void;
     setDebugOpen: (value: boolean) => void;
     setDragActive: (value: boolean) => void;
@@ -59,12 +65,15 @@ const initialIdentity: SessionIdentity = {
 export const useSessionStore = create<SessionStoreState>((set) => ({
     identity: initialIdentity,
     stage: "idle",
+    fingerprintVerified: false,
+    remoteFingerprintVerified: false,
     peerConnected: false,
     statusLine: "Encrypted peer-to-peer exchange",
     messages: [],
     transfers: [],
     logs: [],
     oneShotMode: false,
+    strictMode: false,
     reducedMotion: false,
     debugOpen: false,
     isDragActive: false,
@@ -80,6 +89,8 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
         })),
     setSessionCode: (sessionCode, localPassword) => set({ sessionCode, localPassword }),
     setFingerprint: (fingerprint) => set({ fingerprint }),
+    setFingerprintVerified: (fingerprintVerified) => set({ fingerprintVerified }),
+    setRemoteFingerprintVerified: (remoteFingerprintVerified) => set({ remoteFingerprintVerified }),
     setPeerConnected: (peerConnected) => set({ peerConnected }),
     setError: (error) => set({ error }),
     setNotice: (notice) => set({ notice }),
@@ -108,6 +119,8 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
             stage: "idle",
             sessionCode: undefined,
             fingerprint: undefined,
+            fingerprintVerified: false,
+            remoteFingerprintVerified: false,
             localPassword: undefined,
             peerConnected: false,
             statusLine: "Encrypted peer-to-peer exchange",
@@ -121,6 +134,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
         }),
     setTransportStats: (transportStats) => set({ transportStats }),
     setOneShotMode: (oneShotMode) => set({ oneShotMode }),
+    setStrictMode: (strictMode) => set({ strictMode }),
     setReducedMotion: (reducedMotion) => set({ reducedMotion }),
     setDebugOpen: (debugOpen) => set({ debugOpen }),
     setDragActive: (isDragActive) => set({ isDragActive }),

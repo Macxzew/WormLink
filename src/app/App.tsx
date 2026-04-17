@@ -14,7 +14,10 @@ export const App = () => {
         stage,
         reducedMotion,
         sessionCode,
+        identity,
         fingerprint,
+        fingerprintVerified,
+        remoteFingerprintVerified,
         statusLine,
         messages,
         transfers,
@@ -22,6 +25,8 @@ export const App = () => {
         backendEndpoint,
         backendValidationState,
         backendValidationMessage,
+        transportStats,
+        strictMode,
     } = controller.state;
     const setDragActive = useSessionStore((state) => state.setDragActive);
 
@@ -59,19 +64,26 @@ export const App = () => {
             <div className="relative mx-auto flex min-h-screen max-w-[1120px] items-center justify-center px-3 py-3 md:px-5 md:py-5">
                 <WormholeChannel
                     stage={stage}
+                    role={identity.role}
                     code={sessionCode}
                     fingerprint={fingerprint}
+                    fingerprintVerified={fingerprintVerified}
+                    remoteFingerprintVerified={remoteFingerprintVerified}
                     statusLine={statusLine}
                     messages={messages}
                     transfers={transfers}
                     backendEndpoint={backendEndpoint}
                     backendValidationState={backendValidationState}
                     backendValidationMessage={backendValidationMessage}
+                    transportStats={transportStats}
+                    strictMode={strictMode}
                     disabled={!channelReady}
                     isDragActive={isDragActive}
                     onCreateSession={controller.createSession}
                     onJoinSession={controller.joinSession}
                     onUpdateBackendEndpoint={controller.updateBackendEndpoint}
+                    onSetStrictMode={controller.setStrictMode}
+                    onConfirmFingerprint={controller.confirmFingerprint}
                     onSendMessage={controller.sendText}
                     onSendFiles={controller.sendFiles}
                     onCloseSession={controller.closeSession}
