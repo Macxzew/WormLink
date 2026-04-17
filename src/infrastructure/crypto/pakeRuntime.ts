@@ -22,8 +22,8 @@ interface PakeBindings {
 
 let runtimePromise: Promise<PakeBindings> | null = null;
 
-const WASM_EXEC_PATH = "/wasm_exec.js";
-const WASM_BINARY_PATH = "/wormlink-pake.wasm";
+const WASM_EXEC_PATH = `${import.meta.env.BASE_URL}wasm_exec.js`;
+const WASM_BINARY_PATH = `${import.meta.env.BASE_URL}wormlink-pake.wasm`;
 
 const loadScript = async (src: string): Promise<void> =>
     new Promise((resolve, reject) => {

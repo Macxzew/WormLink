@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, nativeTheme, shell } from "electron";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
+import { fileURLToPath } from "node:url";
 
 const createWindow = async (): Promise<void> => {
     const window = new BrowserWindow({
@@ -26,7 +27,10 @@ const createWindow = async (): Promise<void> => {
     if (is.dev && process.env.ELECTRON_RENDERER_URL) {
         await window.loadURL(process.env.ELECTRON_RENDERER_URL);
     } else {
-        await window.loadFile(new URL("../out/renderer/index.html", import.meta.url).pathname);
+        const indexPath = fileURLToPath(
+            new URL("../out/renderer/index.html", import.meta.url)
+        );
+        await window.loadFile(indexPath);
     }
 
     window.show();

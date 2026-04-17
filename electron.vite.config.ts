@@ -20,6 +20,7 @@ export default defineConfig({
     },
     renderer: {
         root: ".",
+        base: "./", // <- important
         plugins: [react()],
         resolve: {
             alias: {
